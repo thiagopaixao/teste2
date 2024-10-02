@@ -1,0 +1,170 @@
+---
+interface Props {
+  title: string;
+  content: string;
+  latitude: number;
+  longitude: number;
+  zoom: number;
+  geojsons?: { geojson: string }[];
+  id: string;
+  typelayer: string;
+}
+
+const { title, content, latitude, longitude, zoom, geojsons, id, typelayer } = Astro.props;
+---
+
+<section class="relative w-full h-[600vh]">
+  <div class="sticky top-0 w-full h-screen overflow-hidden">
+    <div class="absolute inset-0 z-10 bg-black bg-opacity-50 flex flex-col justify-center items-center text-white p-4">
+      <h2 class="text-3xl font-bold mb-4">{title}</h2>
+      <div class="prose max-w-none mb-4 text-white" set:html={content} />
+    </div>
+    <div id={id} class="absolute inset-0 geo-map" data-latitude={latitude} data-longitude={longitude} data-zoom={zoom} data-geojsons={JSON.stringify(geojsons?.map(g => g.geojson))} data-typelayer={typelayer}></div>
+  </div>
+</section>
+
+<style>
+  .prose :global(*) {
+    color: white;
+  }
+</style>
+
+<script>
+  import L from 'leaflet';
+
+  function initMap() {
+    const mapElements = document.querySelectorAll('.geo-map');
+    mapElements.forEach((mapElement) => {
+      if (!mapElement) return;
+
+      const latitude = Number(mapElement.dataset.latitude);
+      const longitude = Number(mapElement.dataset.longitude);
+      const zoom = Number(mapElement.dataset.zoom);
+      const geojsonsString = mapElement.dataset.geojsons;
+
+      const map = L.map(mapElement.id, {
+        scrollWheelZoom: false,
+        dragging: false,
+        zoomControl: false
+      }).setView([latitude, longitude], zoom);
+
+      const mapTypes = {
+        map: {
+          url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        },
+        topology: {
+          url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+          attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+        },
+        satellite: {
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        }
+      };
+
+      const typelayer = mapElement.dataset.typelayer || 'map';
+      const selectedMapType = mapTypes[typelayer];
+
+      L.tileLayer(selectedMapType.url, {
+        attribution: selectedMapType.attribution
+      }).addTo(map);
+
+      console.log(`Map ${mapElement.id} initialized with type: ${typelayer}`);
+
+      let geojsons = [];
+      let geojsonLayers = [];
+      if (geojsonsString) {
+        try {
+          geojsons = JSON.parse(geojsonsString).map(geojsonStr => JSON.parse(geojsonStr));
+        } catch (error) {
+          console.error('Error parsing GeoJSONs:', error);
+        }
+      }
+
+      // Adiciona a animação de zoom e carregamento de GeoJSONs ao rolar a página
+      const section = mapElement.closest('section');
+      let lastScrollY = window.scrollY;
+      let ticking = false;
+
+      let currentGeojsonIndex = -1;
+
+      function updateMap() {
+        const rect = section.getBoundingClientRect();
+        const sectionHeight = rect.height;
+        const viewportHeight = window.innerHeight;
+        const scrollProgress = (viewportHeight - rect.top) / (sectionHeight + viewportHeight);
+
+        if (scrollProgress >= 0 && scrollProgress <= 1) {
+          const geojsonIndex = Math.floor(scrollProgress * geojsons.length);
+          
+          if (geojsonIndex !== currentGeojsonIndex) {
+            // Remove o GeoJSON anterior com fade out
+            if (geojsonLayers.length > 0) {
+              const oldLayer = geojsonLayers[0];
+              oldLayer.eachLayer(layer => {
+                if (layer.setStyle) {
+                  layer.setStyle({ opacity: 0, fillOpacity: 0 });
+                }
+              });
+              setTimeout(() => {
+                map.removeLayer(oldLayer);
+              }, 1000); // Tempo de transição aumentado para 1 segundo
+            }
+
+            // Adiciona o novo GeoJSON com fade in
+            if (geojsonIndex < geojsons.length) {
+              const newLayer = L.geoJSON(geojsons[geojsonIndex], {
+                style: {
+                  opacity: 0,
+                  fillOpacity: 0,
+                  weight: 2,
+                  color: "#ff7800",
+                  fillColor: "#ff7800"
+                }
+              }).addTo(map);
+
+              setTimeout(() => {
+                newLayer.eachLayer(layer => {
+                  if (layer.setStyle) {
+                    layer.setStyle({
+                      opacity: 1,
+                      fillOpacity: 0.2,
+                      transition: 'opacity 1s ease-in-out, fill-opacity 1s ease-in-out'
+                    });
+                  }
+                });
+              }, 50);
+
+              geojsonLayers = [newLayer];
+              currentGeojsonIndex = geojsonIndex;
+            }
+          }
+        }
+
+        ticking = false;
+      }
+
+      window.addEventListener('scroll', () => {
+        lastScrollY = window.scrollY;
+        if (!ticking) {
+          window.requestAnimationFrame(() => {
+            updateMap();
+            ticking = false;
+          });
+          ticking = true;
+        }
+      });
+
+      // Inicializa o mapa com o zoom correto
+      updateMap();
+    });
+  }
+
+  // Initialize the map when the DOM is fully loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMap);
+  } else {
+    initMap();
+  }
+</script>

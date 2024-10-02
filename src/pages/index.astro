@@ -1,0 +1,46 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/sections/Header.astro';
+import TextSection from '../components/sections/TextSection.astro';
+import Gallery from '../components/sections/Gallery.astro';
+import MapSection from '../components/sections/MapSection.astro';
+import GeoMap from '../components/sections/GeoMap.astro';
+import Footer from '../components/sections/Footer.astro';
+
+const pages = await getCollection('page');
+const page = pages.length > 0 ? pages[0] : null; // Verifica se há páginas na coleção
+---
+
+<Layout title={page?.data.title || "Descubra o Brasil: Uma Jornada Interativa"}>
+  {page ? (
+    page.data.sections.map((section, index) => {
+      switch (section.type) {
+        case 'header':
+          return <Header backgroundImage={`${import.meta.env.BASE_URL}${section.backgroundImage}`} title={section.title} />;
+        case 'text':
+          return <TextSection content={section.content} />;
+        case 'gallery':
+          return <Gallery images={section.images.map(img => `${import.meta.env.BASE_URL}${img}`)} />;
+        case 'map':
+          return <GeoMap 
+            key={`map-${index}`}
+            id={`map-${index}`}
+            title={section.title}
+            content={section.content}
+            latitude={section.latitude || -14.235} 
+            longitude={section.longitude || -51.9253} 
+            zoom={section.zoom || 4}
+            geojsons={section.geojsons}
+            typelayer={section.typelayer || 'map'}
+          />;
+        case 'footer':
+          return <Footer content={section.content} />;
+        default:
+          return null;
+      }
+    })
+  ) : (
+    <p>Nenhum conteúdo encontrado. Por favor, adicione uma página no CMS.</p>
+  )}
+</Layout>
